@@ -9,6 +9,9 @@ import {
   signOut,
   updateProfile,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import {
+  addDoc, collection, doc, getDoc, getDocs, getFirestore, serverTimestamp, setDoc,
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyB4EjMAMRx3P0yT3YKhD7YV06rPfZSCtkQ",
@@ -19,7 +22,9 @@ const firebaseConfig = {
   appId: "1:46039691868:web:57a70a827c408e50a5ec99",
 };
 
-const auth = getAuth(initializeApp(firebaseConfig));
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
 const googleProvider = new GoogleAuthProvider();
 const accountButton = document.getElementById("cloudAccountBtn");
 const leaderboardButton = document.getElementById("leaderboardBtn");
@@ -37,6 +42,70 @@ let dailyBoardDifficulty = "easy";
 let dailyBoardRequest = 0;
 let leaderboardCategory = "clean";
 let gameSessionPromise = null;
+
+/* GitHub Pages has no server-side /api routes, so these calls use Firestore directly. */
+const nativeFetch = window.fetch.bind(window);
+const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value), {status, headers:{"content-type":"application/json; charset=utf-8"}});
+const safePart = value => String(value || "none").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
+const scoreKey = value => [value.gameKind,value.difficulty,value.dailyDate||"all",value.category,value.userId].map(safePart).join("__");
+const scoreCategory = value => value.autoCompleted ? "auto" : ((+value.hints || +value.undos) ? "assisted" : "clean");
+const parseBody = async init => { try { return JSON.parse(init?.body || "{}"); } catch { return {}; } };
+const stampToIso = value => value?.toDate?.().toISOString?.() || new Date().toISOString();
+
+async function getProfile() {
+  if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
+  const snapshot=await getDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid));
+  return jsonResponse({profile:snapshot.exists()?snapshot.data():null});
+}
+async function putProfile(init) {
+  if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
+  const value=await parseBody(init),profile={progress:value.progress||{},xp:+value.xp||0,level:+value.level||1,frameId:value.frameId||"classic",playerName:cleanName(value.playerName)||"Игрок",userId:currentUser.uid,updatedAt:serverTimestamp()};
+  await setDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid),profile,{merge:true});
+  return jsonResponse({ok:true,profile});
+}
+async function readScores(search) {
+  const filters={gameKind:search.get("gameKind")||"random",difficulty:search.get("difficulty")||"easy",category:search.get("category")||"clean",dailyDate:search.get("dailyDate")||""};
+  const all=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
+  const entries=all.filter(item=>item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&item.category===filters.category&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru")).slice(0,100);
+  const rank=currentUser?entries.findIndex(item=>item.userId===currentUser.uid)+1:0;
+  const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
+  return jsonResponse({entries,participants:entries.length,rank:rank||null,attempts});
+}
+async function writeScore(init) {
+  if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
+  const value=await parseBody(init),category=scoreCategory(value);
+  const normalized={userId:currentUser.uid,playerName:cleanName(value.playerName)||"Игрок",gameKind:["daily","weekly"].includes(value.gameKind)?value.gameKind:"random",difficulty:["easy","medium","hard"].includes(value.difficulty)?value.difficulty:"easy",dailyDate:value.dailyDate||"",category,moves:Math.max(1,+value.moves||0),seconds:Math.max(0,+value.seconds||0),hints:+value.hints||0,undos:+value.undos||0,frameId:"classic",level:1,updatedAt:serverTimestamp()};
+  const profile=await getDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid));
+  if(profile.exists()){normalized.frameId=profile.data().frameId||"classic";normalized.level=+profile.data().level||1}
+  const ref=doc(db,"miyeonSpiderScores",scoreKey(normalized)),previous=await getDoc(ref),previousMoves=previous.exists()?+previous.data().moves:Infinity;
+  if(normalized.moves<previousMoves)await setDoc(ref,normalized);
+  const board=await (await readScores(new URLSearchParams({gameKind:normalized.gameKind,difficulty:normalized.difficulty,dailyDate:normalized.dailyDate,category}))).json();
+  return jsonResponse({ok:true,saved:normalized.moves<previousMoves,rank:board.rank});
+}
+async function dailyStats(search,init) {
+  if((init?.method||"GET").toUpperCase()==="POST"){
+    const value=await parseBody(init);
+    await addDoc(collection(db,"miyeonSpiderDailyEvents"),{event:value.event==="win"?"win":"start",dailyDate:value.dailyDate||"",difficulty:value.difficulty||"easy",moves:+value.moves||0,userId:currentUser?.uid||"guest",createdAt:serverTimestamp()});
+    return jsonResponse({ok:true});
+  }
+  const dailyDate=search.get("dailyDate")||"",difficulty=search.get("difficulty")||"easy";
+  const events=(await getDocs(collection(db,"miyeonSpiderDailyEvents"))).docs.map(item=>item.data()).filter(item=>item.dailyDate===dailyDate&&item.difficulty===difficulty);
+  const board=await (await readScores(new URLSearchParams({gameKind:"daily",difficulty,dailyDate,category:"clean"}))).json();
+  const wins=events.filter(item=>item.event==="win"),moves=wins.map(item=>+item.moves||0).filter(Boolean).sort((a,b)=>a-b);
+  const averageMoves=moves.length?Math.round(moves.reduce((sum,move)=>sum+move,0)/moves.length):null,medianMoves=moves.length?moves[Math.floor((moves.length-1)/2)]:null,plays=events.filter(item=>item.event==="start").length;
+  return jsonResponse({entries:board.entries,stats:{plays,wins:wins.length,winRate:plays?Math.round(wins.length/plays*100):0,averageMoves,medianMoves,cleanRate:wins.length?Math.round(board.entries.length/wins.length*100):0}});
+}
+window.fetch=async(input,init={})=>{
+  const raw=typeof input==="string"?input:input?.url;if(!raw)return nativeFetch(input,init);
+  const url=new URL(raw,window.location.href);if(!url.pathname.startsWith("/api/"))return nativeFetch(input,init);
+  try{
+    if(url.pathname==="/api/progress")return(init.method||"GET").toUpperCase()==="PUT"?putProfile(init):getProfile();
+    if(url.pathname==="/api/game-session")return jsonResponse({sessionId:crypto.randomUUID?.()||String(Date.now())});
+    if(url.pathname==="/api/leaderboard")return(init.method||"GET").toUpperCase()==="POST"?writeScore(init):readScores(url.searchParams);
+    if(url.pathname==="/api/daily-stats")return dailyStats(url.searchParams,init);
+    return jsonResponse({error:"Неизвестный запрос"},404);
+  }catch(error){console.error("Firebase sync error",error);return jsonResponse({error:"Не удалось синхронизировать данные"},503)}
+};
 
 const layer = document.createElement("div");
 layer.className = "cloud-layer";

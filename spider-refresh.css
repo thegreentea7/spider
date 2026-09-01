@@ -375,3 +375,19 @@ body::before {
 #dailyCalendarModal .daily-calendar-content{grid-template-columns:minmax(310px,.85fr) minmax(430px,1.15fr)}#dailyCalendarModal .daily-community-panel{box-shadow:4px 4px 0 rgba(89,40,63,.12)}#dailyCalendarModal .daily-community-stats{grid-template-columns:repeat(4,1fr)}
 #dailyCalendarModal .calendar-side{max-height:min(690px,72vh);overflow-y:scroll!important;overflow-x:hidden!important;padding-right:12px;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:#d979a2 #fbe3ed}#dailyCalendarModal .calendar-side::-webkit-scrollbar{width:14px}#dailyCalendarModal .calendar-side::-webkit-scrollbar-track{background:#fbe3ed;border:1px solid #dda8bd}#dailyCalendarModal .calendar-side::-webkit-scrollbar-thumb{min-height:48px;background:#d979a2;border:3px solid #fbe3ed;border-radius:9px}
 @media(max-width:760px){#dailyCalendarModal .daily-calendar-content{grid-template-columns:1fr}#dailyCalendarModal .calendar-side{max-height:55vh;overflow-y:scroll!important;padding-right:10px}#dailyCalendarModal .daily-community-stats{grid-template-columns:repeat(2,1fr)}.card.selected::after{content:"СЕРИЯ";position:absolute;right:3px;top:3px;padding:2px 3px;color:#59283f;background:#f2c94c;font-size:5px;font-weight:950}}
+
+/* Более крупный и читаемый текст во всех дополнительных экранах. */
+.btn { font-size: 12px; }
+.cloud-kicker,.profile-name,.board-head,.daily-board-head,.progress-head span,
+.progress-overview span,.achievement-card span,.achievement-card small,.history-list span,
+.reward-back span,.result-kicker,.result-grid span,.assist-line,.attempt-row,.daily-task-card div,
+.public-profile-card span,.public-profile-card small,.ghost-progress span,.ghost-progress small,
+.onboarding-card>span,.mobile-quickbar span,.level-card span,.level-card small,.deep-stats span,
+.daily-community-stats span,.board-player em,.reward-toast span { font-size: 11px; }
+.cloud-head p,.progress-head p,.comparison-note,.weekly-hero p,.onboarding-card p,
+.result-record,.result-achievements,.replay-meta span { font-size: 13px; }
+.progress-chart text,.progress-chart .chart-axis-title,.progress-chart .chart-tick,
+.progress-chart .chart-value { font-size: 10px; }
+.pill span,.brand span,.cloud-message,.profile-card p,.board-player,.board-player small,
+.daily-community-head span,.frame-option,.friends-error { font-size: 12px; }
+@media (max-width: 1080px) { .btn { font-size: 11px; } }
