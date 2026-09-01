@@ -40,7 +40,7 @@ let activeBoard = { gameKind: "random", difficulty: "easy", dailyDate: todayKey(
 let leaderboardRequest = 0;
 let dailyBoardDifficulty = "easy";
 let dailyBoardRequest = 0;
-let leaderboardCategory = "clean";
+let leaderboardCategory = "all";
 let gameSessionPromise = null;
 
 /* GitHub Pages has no server-side /api routes, so these calls use Firestore directly. */
@@ -64,9 +64,10 @@ async function putProfile(init) {
   return jsonResponse({ok:true,profile});
 }
 async function readScores(search) {
-  const filters={gameKind:search.get("gameKind")||"random",difficulty:search.get("difficulty")||"easy",category:search.get("category")||"clean",dailyDate:search.get("dailyDate")||""};
+  const filters={gameKind:search.get("gameKind")||"random",difficulty:search.get("difficulty")||"easy",category:search.get("category")||"all",dailyDate:search.get("dailyDate")||""};
   const all=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
-  const entries=all.filter(item=>item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&item.category===filters.category&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru")).slice(0,100);
+  const matching=all.filter(item=>item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
+  const entries=[...new Map(matching.map(item=>[item.userId,item])).values()].slice(0,100);
   const rank=currentUser?entries.findIndex(item=>item.userId===currentUser.uid)+1:0;
   const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
   return jsonResponse({entries,participants:entries.length,rank:rank||null,attempts});
@@ -90,7 +91,7 @@ async function dailyStats(search,init) {
   }
   const dailyDate=search.get("dailyDate")||"",difficulty=search.get("difficulty")||"easy";
   const events=(await getDocs(collection(db,"miyeonSpiderDailyEvents"))).docs.map(item=>item.data()).filter(item=>item.dailyDate===dailyDate&&item.difficulty===difficulty);
-  const board=await (await readScores(new URLSearchParams({gameKind:"daily",difficulty,dailyDate,category:"clean"}))).json();
+  const board=await (await readScores(new URLSearchParams({gameKind:"daily",difficulty,dailyDate,category:"all"}))).json();
   const wins=events.filter(item=>item.event==="win"),moves=wins.map(item=>+item.moves||0).filter(Boolean).sort((a,b)=>a-b);
   const averageMoves=moves.length?Math.round(moves.reduce((sum,move)=>sum+move,0)/moves.length):null,medianMoves=moves.length?moves[Math.floor((moves.length-1)/2)]:null,plays=events.filter(item=>item.event==="start").length;
   return jsonResponse({entries:board.entries,stats:{plays,wins:wins.length,winRate:plays?Math.round(wins.length/plays*100):0,averageMoves,medianMoves,cleanRate:wins.length?Math.round(board.entries.length/wins.length*100):0}});
@@ -258,10 +259,9 @@ function boardTabs() {
 
 function renderLeaderboardShell() {
   title.textContent = "Таблица лидеров";
-  subtitle.textContent = "Основной рейтинг — только победы без подсказок, отмен и автозавершения.";
+  subtitle.textContent = "Лучший результат каждого игрока. Места определяются только по количеству ходов.";
   body.innerHTML = `
     <div class="board-tabs" role="tablist">${boardTabs()}</div>
-    <div class="category-tabs"><button class="btn ${leaderboardCategory === "clean" ? "active" : ""}" data-category="clean">Чистые</button><button class="btn ${leaderboardCategory === "assisted" ? "active" : ""}" data-category="assisted">С помощью</button><button class="btn ${leaderboardCategory === "auto" ? "active" : ""}" data-category="auto">Авто</button><button class="btn ${leaderboardCategory === "legacy" ? "active" : ""}" data-category="legacy">Архив</button></div>
     <div class="leaderboard-table"><div class="board-empty"><strong>Загружаем результаты…</strong></div></div>
     <p class="cloud-message" role="status"></p>
     <div class="profile-actions"><button class="btn primary" type="button" data-board-account>${currentUser ? "Имя и профиль" : "Войти в игру"}</button><button class="btn" type="button" data-refresh>Обновить</button></div>`;
@@ -272,10 +272,6 @@ function renderLeaderboardShell() {
     activeBoard.difficulty = tab.dataset.difficulty;
     renderLeaderboardShell();
     loadLeaderboard();
-  });
-  body.querySelector(".category-tabs").addEventListener("click", (event) => {
-    const tab = event.target.closest("[data-category]"); if (!tab) return;
-    leaderboardCategory = tab.dataset.category; renderLeaderboardShell(); loadLeaderboard();
   });
   body.querySelector("[data-board-account]").addEventListener("click", renderAccount);
   body.querySelector("[data-refresh]").addEventListener("click", loadLeaderboard);
