@@ -4834,19 +4834,6 @@
   <button type="button" data-mobile-action="deal">▤<span>Раздать</span></button>
   <button type="button" data-mobile-action="progress">♡<span>Профиль</span></button>
 </nav>
-<script>
-  (() => {
-    const apiOrigin = 'https://miyeon-spider.kulakovavava.chatgpt.site';
-    const nativeFetch = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const url = typeof input === 'string' ? input : input?.url;
-      if (typeof url === 'string' && url.startsWith('/api/')) {
-        return nativeFetch(apiOrigin + url, init);
-      }
-      return nativeFetch(input, init);
-    };
-  })();
-</script>
 <script type="module" src="spider-cloud.js"></script>
 <script src="spider-progress.js?v=2"></script>
 </body>
