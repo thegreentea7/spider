@@ -66,10 +66,11 @@ async function putProfile(init) {
 async function readScores(search) {
   const filters={gameKind:search.get("gameKind")||"random",difficulty:search.get("difficulty")||"easy",category:search.get("category")||"all",dailyDate:search.get("dailyDate")||""};
   const all=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
-  const matching=all.filter(item=>item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
+  const kindMatches=item=>filters.gameKind==="random"?["random","daily"].includes(item.gameKind):item.gameKind===filters.gameKind;
+  const matching=all.filter(item=>kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
   const entries=[...new Map(matching.map(item=>[item.userId,item])).values()].slice(0,100);
   const rank=currentUser?entries.findIndex(item=>item.userId===currentUser.uid)+1:0;
-  const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&item.gameKind===filters.gameKind&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
+  const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
   return jsonResponse({entries,participants:entries.length,rank:rank||null,attempts});
 }
 async function writeScore(init) {
@@ -259,7 +260,7 @@ function boardTabs() {
 
 function renderLeaderboardShell() {
   title.textContent = "Таблица лидеров";
-  subtitle.textContent = "Лучший результат каждого игрока. Места определяются только по количеству ходов.";
+  subtitle.textContent = "Учитываются обычные и ежедневные раскладки. Места определяются только по количеству ходов.";
   body.innerHTML = `
     <div class="board-tabs" role="tablist">${boardTabs()}</div>
     <div class="leaderboard-table"><div class="board-empty"><strong>Загружаем результаты…</strong></div></div>
