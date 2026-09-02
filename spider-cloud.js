@@ -68,7 +68,12 @@ async function readScores(search) {
   const all=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
   const kindMatches=item=>filters.gameKind==="random"?["random","daily"].includes(item.gameKind):item.gameKind===filters.gameKind;
   const matching=all.filter(item=>kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
-  const entries=[...new Map(matching.map(item=>[item.userId,item])).values()].slice(0,100);
+  const seenUsers=new Set();
+  const entries=matching.filter(item=>{
+    if(seenUsers.has(item.userId))return false;
+    seenUsers.add(item.userId);
+    return true;
+  }).sort((a,b)=>Number(a.moves)-Number(b.moves)||String(a.playerName).localeCompare(String(b.playerName),"ru")).slice(0,100);
   const rank=currentUser?entries.findIndex(item=>item.userId===currentUser.uid)+1:0;
   const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
   return jsonResponse({entries,participants:entries.length,rank:rank||null,attempts});
