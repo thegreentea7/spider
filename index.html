@@ -2057,7 +2057,7 @@
             <button class="btn" type="button" id="exportDailyProgressBtn">Экспорт прогресса</button>
             <button class="btn" type="button" id="importDailyProgressBtn">Импорт прогресса</button>
             <input id="importDailyProgressInput" type="file" accept="application/json,.json" hidden>
-            <span class="daily-tools-note">Прогресс хранится в этом браузере. Экспорт пригодится для переноса на другое устройство или восстановления после очистки данных.</span>
+            <span class="daily-tools-note">После входа календарь синхронизируется между устройствами. Экспорт можно использовать как резервную копию.</span>
           </div>
 
           <div class="trophy-section">
@@ -2660,6 +2660,14 @@
     ensureAllEarnedTrophies();
     saveDailyProgress();
   }
+
+  window.MiyeonSpiderDailyProgress = {
+    get:() => JSON.parse(JSON.stringify(dailyProgress)),
+    merge:(incoming) => {
+      mergeDailyProgress(incoming);
+      if (el.dailyCalendar.classList.contains('show')) renderDailyCalendar();
+    }
+  };
 
   const DIFFICULTY_LETTERS = {
     easy: 'E',
@@ -4834,7 +4842,7 @@
   <button type="button" data-mobile-action="deal">▤<span>Раздать</span></button>
   <button type="button" data-mobile-action="progress">♡<span>Профиль</span></button>
 </nav>
-<script type="module" src="spider-cloud.js?v=7"></script>
-<script src="spider-progress.js?v=2"></script>
+<script type="module" src="spider-cloud.js?v=8"></script>
+<script src="spider-progress.js?v=3"></script>
 </body>
 </html>

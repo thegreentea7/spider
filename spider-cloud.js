@@ -51,16 +51,43 @@ const scoreKey = value => [value.gameKind,value.difficulty,value.dailyDate||"all
 const scoreCategory = value => value.autoCompleted ? "auto" : ((+value.hints || +value.undos) ? "assisted" : "clean");
 const parseBody = async init => { try { return JSON.parse(init?.body || "{}"); } catch { return {}; } };
 const stampToIso = value => value?.toDate?.().toISOString?.() || new Date().toISOString();
+const emptyDailyCloud = () => ({version:1,days:{},trophies:{}});
+function mergeDailyCloud(base,incoming){
+  const result=emptyDailyCloud();
+  for(const source of [base,incoming]){
+    for(const [dateKey,item] of Object.entries(source?.days||{})){
+      if(!/^\d{8}$/.test(dateKey)||!item?.completed)continue;
+      const current=result.days[dateKey],candidate={...item,completed:true};
+      if(!current||(+candidate.bestMoves||Infinity)<(+current.bestMoves||Infinity))result.days[dateKey]=candidate;
+      if(current)result.days[dateKey].plays=Math.max(+current.plays||1,+candidate.plays||1);
+    }
+    Object.assign(result.trophies,source?.trophies||{});
+  }
+  return result;
+}
+function dailyProgressFromScores(scores){
+  const progress=emptyDailyCloud();
+  for(const score of scores){
+    if(score.userId!==currentUser?.uid||score.gameKind!=="daily"||!/^\d{8}$/.test(score.dailyDate||""))continue;
+    const candidate={completed:true,bestTime:+score.seconds||0,bestMoves:+score.moves||0,difficulty:score.difficulty||"medium",plays:1,completedAt:stampToIso(score.updatedAt)};
+    const current=progress.days[score.dailyDate];
+    if(!current||candidate.bestMoves<current.bestMoves)progress.days[score.dailyDate]=candidate;
+  }
+  return progress;
+}
 
 async function getProfile() {
   if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
   const snapshot=await getDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid));
-  return jsonResponse({profile:snapshot.exists()?snapshot.data():null});
+  const stored=snapshot.exists()?snapshot.data():{};
+  const scores=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
+  return jsonResponse({profile:{...stored,dailyProgress:mergeDailyCloud(stored.dailyProgress,dailyProgressFromScores(scores))}});
 }
 async function putProfile(init) {
   if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
-  const value=await parseBody(init),profile={progress:value.progress||{},xp:+value.xp||0,level:+value.level||1,frameId:value.frameId||"classic",playerName:cleanName(value.playerName)||"Игрок",userId:currentUser.uid,updatedAt:serverTimestamp()};
-  await setDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid),profile,{merge:true});
+  const value=await parseBody(init),ref=doc(db,"miyeonSpiderProfiles",currentUser.uid),stored=await getDoc(ref),existing=stored.exists()?stored.data():{};
+  const profile={progress:value.progress||{},dailyProgress:mergeDailyCloud(existing.dailyProgress,value.dailyProgress),xp:+value.xp||0,level:+value.level||1,frameId:value.frameId||"classic",playerName:cleanName(value.playerName)||"Игрок",userId:currentUser.uid,updatedAt:serverTimestamp()};
+  await setDoc(ref,profile,{merge:true});
   return jsonResponse({ok:true,profile});
 }
 async function readScores(search) {
