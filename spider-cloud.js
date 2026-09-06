@@ -505,7 +505,7 @@ async function recordDailyEvent(event, detail) {
 
 accountButton?.addEventListener("click", () => { renderAccount(); openLayer(); });
 leaderboardButton?.addEventListener("click", openLeaderboard);
-body.addEventListener("click",event=>{const player=event.target.closest("[data-profile-user]");if(player)renderOtherProfile(player.dataset.profileUser)});
+document.addEventListener("click",event=>{const player=event.target.closest("[data-profile-user]");if(player)renderOtherProfile(player.dataset.profileUser)});
 window.addEventListener("miyeon-spider-context", (event) => { context = { ...context, ...event.detail }; });
 window.addEventListener("miyeon-spider-daily-selected", (event) => {
   context.dailyDateKey = event.detail.dailyDateKey;
