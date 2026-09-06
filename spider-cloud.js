@@ -47,7 +47,7 @@ let gameSessionPromise = null;
 const nativeFetch = window.fetch.bind(window);
 const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value), {status, headers:{"content-type":"application/json; charset=utf-8"}});
 const safePart = value => String(value || "none").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
-const scoreKey = value => [value.gameKind,value.difficulty,value.dailyDate||"all",value.category,value.userId].map(safePart).join("__");
+const scoreKey = value => [value.gameKind,value.gameKind==="oneAttempt"?"all":value.difficulty,value.dailyDate||"all",value.gameKind==="oneAttempt"?"all":value.category,value.userId].map(safePart).join("__");
 const scoreCategory = value => value.autoCompleted ? "auto" : ((+value.hints || +value.undos) ? "assisted" : "clean");
 const parseBody = async init => { try { return JSON.parse(init?.body || "{}"); } catch { return {}; } };
 const stampToIso = value => value?.toDate?.().toISOString?.() || new Date().toISOString();
@@ -94,7 +94,8 @@ async function readScores(search) {
   const filters={gameKind:search.get("gameKind")||"random",difficulty:search.get("difficulty")||"easy",category:search.get("category")||"all",dailyDate:search.get("dailyDate")||""};
   const all=(await getDocs(collection(db,"miyeonSpiderScores"))).docs.map(item=>item.data());
   const kindMatches=item=>filters.gameKind==="random"?["random","daily"].includes(item.gameKind):item.gameKind===filters.gameKind;
-  const matching=all.filter(item=>kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
+  const difficultyMatches=item=>filters.gameKind==="oneAttempt"||item.difficulty===filters.difficulty;
+  const matching=all.filter(item=>kindMatches(item)&&difficultyMatches(item)&&(filters.category==="all"||item.category===filters.category)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).sort((a,b)=>(+a.moves||999999)-(+b.moves||999999)||String(a.playerName).localeCompare(String(b.playerName),"ru"));
   const seenUsers=new Set();
   const entries=matching.filter(item=>{
     if(seenUsers.has(item.userId))return false;
@@ -102,19 +103,35 @@ async function readScores(search) {
     return true;
   }).sort((a,b)=>Number(a.moves)-Number(b.moves)||String(a.playerName).localeCompare(String(b.playerName),"ru")).slice(0,100);
   const rank=currentUser?entries.findIndex(item=>item.userId===currentUser.uid)+1:0;
-  const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&kindMatches(item)&&item.difficulty===filters.difficulty&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
+  const attempts=currentUser?all.filter(item=>item.userId===currentUser.uid&&kindMatches(item)&&difficultyMatches(item)&&(filters.gameKind==="random"||item.dailyDate===filters.dailyDate)).map(item=>({...item,createdAt:stampToIso(item.updatedAt)})).sort((a,b)=>+a.moves-+b.moves):[];
   return jsonResponse({entries,participants:entries.length,rank:rank||null,attempts});
 }
 async function writeScore(init) {
   if (!currentUser) return jsonResponse({error:"Войдите в аккаунт"},401);
   const value=await parseBody(init),category=scoreCategory(value);
-  const normalized={userId:currentUser.uid,playerName:cleanName(value.playerName)||"Игрок",gameKind:["daily","weekly"].includes(value.gameKind)?value.gameKind:"random",difficulty:["easy","medium","hard"].includes(value.difficulty)?value.difficulty:"easy",dailyDate:value.dailyDate||"",category,moves:Math.max(1,+value.moves||0),seconds:Math.max(0,+value.seconds||0),hints:+value.hints||0,undos:+value.undos||0,frameId:"classic",level:1,updatedAt:serverTimestamp()};
+  const normalized={userId:currentUser.uid,playerName:cleanName(value.playerName)||"Игрок",gameKind:["daily","weekly","oneAttempt"].includes(value.gameKind)?value.gameKind:"random",difficulty:["easy","medium","hard"].includes(value.difficulty)?value.difficulty:"easy",dailyDate:value.dailyDate||"",category,moves:Math.max(1,+value.moves||0),seconds:Math.max(0,+value.seconds||0),hints:+value.hints||0,undos:+value.undos||0,frameId:"classic",level:1,updatedAt:serverTimestamp()};
+  if(normalized.gameKind==="oneAttempt"){
+    if(normalized.dailyDate!==todayKey())return jsonResponse({error:"Срок этого испытания уже закончился"},409);
+    const claim=await getDoc(doc(db,"miyeonSpiderOneAttempts",`${normalized.dailyDate}__${safePart(currentUser.uid)}`));
+    if(!claim.exists())return jsonResponse({error:"Попытка не была зарегистрирована"},409);
+  }
   const profile=await getDoc(doc(db,"miyeonSpiderProfiles",currentUser.uid));
   if(profile.exists()){normalized.frameId=profile.data().frameId||"classic";normalized.level=+profile.data().level||1}
   const ref=doc(db,"miyeonSpiderScores",scoreKey(normalized)),previous=await getDoc(ref),previousMoves=previous.exists()?+previous.data().moves:Infinity;
-  if(normalized.moves<previousMoves)await setDoc(ref,normalized);
-  const board=await (await readScores(new URLSearchParams({gameKind:normalized.gameKind,difficulty:normalized.difficulty,dailyDate:normalized.dailyDate,category}))).json();
-  return jsonResponse({ok:true,saved:normalized.moves<previousMoves,rank:board.rank});
+  const shouldSave=normalized.moves<previousMoves&&!(normalized.gameKind==="oneAttempt"&&previous.exists());
+  if(shouldSave)await setDoc(ref,normalized);
+  const board=await (await readScores(new URLSearchParams({gameKind:normalized.gameKind,difficulty:normalized.difficulty,dailyDate:normalized.dailyDate,category:normalized.gameKind==="oneAttempt"?"all":category}))).json();
+  return jsonResponse({ok:true,saved:shouldSave,rank:board.rank});
+}
+async function oneAttempt(search,init) {
+  if(!currentUser)return jsonResponse({error:"Войдите в аккаунт"},401);
+  const date=todayKey(),ref=doc(db,"miyeonSpiderOneAttempts",`${date}__${safePart(currentUser.uid)}`),existing=await getDoc(ref);
+  if((init?.method||"GET").toUpperCase()!=="POST")return jsonResponse({date,used:existing.exists(),attempt:existing.exists()?existing.data():null});
+  if(existing.exists())return jsonResponse({error:"Попытка на сегодня уже использована",used:true,date},409);
+  const value=await parseBody(init),difficulty=["easy","medium","hard"].includes(value.difficulty)?value.difficulty:"medium";
+  try{await setDoc(ref,{userId:currentUser.uid,date,difficulty,startedAt:serverTimestamp()});}
+  catch{return jsonResponse({error:"Попытка на сегодня уже использована",used:true,date},409)}
+  return jsonResponse({ok:true,used:true,date,difficulty});
 }
 async function dailyStats(search,init) {
   if((init?.method||"GET").toUpperCase()==="POST"){
@@ -135,6 +152,7 @@ window.fetch=async(input,init={})=>{
   try{
     if(url.pathname==="/api/progress")return(init.method||"GET").toUpperCase()==="PUT"?putProfile(init):getProfile();
     if(url.pathname==="/api/game-session")return jsonResponse({sessionId:crypto.randomUUID?.()||String(Date.now())});
+    if(url.pathname==="/api/one-attempt")return oneAttempt(url.searchParams,init);
     if(url.pathname==="/api/leaderboard")return(init.method||"GET").toUpperCase()==="POST"?writeScore(init):readScores(url.searchParams);
     if(url.pathname==="/api/daily-stats")return dailyStats(url.searchParams,init);
     return jsonResponse({error:"Неизвестный запрос"},404);
@@ -269,7 +287,7 @@ async function loadPublicProfile() {
 
 async function createGameSession(detail) {
   if(!currentUser||detail.gameKind==="code")return "";
-  const gameKind=["daily","weekly"].includes(detail.gameKind)?detail.gameKind:"random";
+  const gameKind=["daily","weekly","oneAttempt"].includes(detail.gameKind)?detail.gameKind:"random";
   const response=await fetch("/api/game-session",{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${await currentUser.getIdToken()}`},body:JSON.stringify({...detail,gameKind})});
   if(!response.ok)return "";
   return (await response.json()).sessionId||"";
@@ -352,7 +370,7 @@ function openLeaderboard() {
 
 async function publishResult(result) {
   if (!currentUser || cleanName(currentUser.displayName).length < 2) return false;
-  const gameKind = ["daily", "weekly"].includes(result.gameKind) ? result.gameKind : "random";
+  const gameKind = ["daily", "weekly", "oneAttempt"].includes(result.gameKind) ? result.gameKind : "random";
   const sessionId = await gameSessionPromise;
   const response = await fetch("/api/leaderboard", {
     method: "POST",
@@ -360,7 +378,7 @@ async function publishResult(result) {
     body: JSON.stringify({
       difficulty: result.difficulty,
       gameKind,
-      dailyDate: ["daily", "weekly"].includes(gameKind) ? result.dailyDateKey : "",
+      dailyDate: ["daily", "weekly", "oneAttempt"].includes(gameKind) ? result.dailyDateKey : "",
       seconds: result.seconds,
       moves: result.moves,
       playerName: cleanName(currentUser.displayName),
@@ -471,7 +489,7 @@ window.addEventListener("miyeon-spider-start", (event) => {
 window.addEventListener("miyeon-spider-win", async (event) => {
   const scoreDetail = { ...event.detail };
   delete scoreDetail.replay;
-  const result = { ...scoreDetail, gameKind: ["daily", "weekly"].includes(event.detail.gameKind) ? event.detail.gameKind : "random" };
+  const result = { ...scoreDetail, gameKind: ["daily", "weekly", "oneAttempt"].includes(event.detail.gameKind) ? event.detail.gameKind : "random" };
   if (event.detail.gameKind === "code") return;
   recordDailyEvent("win", event.detail).catch(() => {});
   localStorage.setItem(PENDING_RESULT_KEY, JSON.stringify(result));

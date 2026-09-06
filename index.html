@@ -1236,6 +1236,15 @@
     .modal-card .big{font-size:52px}
     .modal-card h2{margin:8px 0 8px;font-size:28px}
     .modal-card p{margin:0 0 20px;color:var(--muted);line-height:1.5}
+    .challenges-card{width:min(760px,calc(100vw - 32px));position:relative;text-align:left}
+    .challenges-close{position:absolute;top:16px;right:16px}
+    .challenges-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px}
+    .challenge-choice{min-height:150px;padding:20px;text-align:left;border:2px solid #dca3bb;border-radius:12px;background:#fff8fb;color:var(--ink);cursor:pointer;box-shadow:4px 4px 0 rgba(126,55,86,.14)}
+    .challenge-choice:hover{transform:translateY(-2px);border-color:var(--accent)}
+    .challenge-choice i{display:block;margin-bottom:12px;font-size:30px;font-style:normal}
+    .challenge-choice strong{display:block;font-size:17px}
+    .challenge-choice span{display:block;margin-top:7px;color:var(--muted);font-size:12px;line-height:1.45}
+    @media(max-width:740px){.challenges-grid{grid-template-columns:1fr}.challenge-choice{min-height:0}}
 
     .help{
       position:fixed;
@@ -1895,7 +1904,7 @@
 
       <div class="controls">
         <button class="btn primary" id="newGameBtn">Новая игра</button>
-        <button class="btn" id="dailyGameBtn">☀ Ежедневная</button>
+        <button class="btn" id="dailyGameBtn">♛ Испытания</button>
         <button class="btn" id="undoBtn">↶ Отменить</button>
         <button class="btn" id="hintBtn">✦ Подсказка</button>
         <button class="btn cloud-entry" id="leaderboardBtn" type="button">♛ Рейтинг</button>
@@ -1912,7 +1921,6 @@
             <div class="more-divider"></div>
             <button class="more-item" id="statisticsBtn" type="button">⌁ Статистика</button>
             <button class="more-item" id="progressHubBtn" type="button">★ Прогресс и награды</button>
-            <button class="more-item" id="weeklyChallengeBtn" type="button">♛ Испытание недели</button>
             <button class="more-item" id="settingsBtn" type="button">⚙ Настройки</button>
             <button class="more-item" id="helpBtn" type="button">? Правила</button>
           </div>
@@ -1920,7 +1928,7 @@
       </div>
 
       <div class="stats">
-        <div class="pill"><b id="movesValue">0</b><span>ходы</span></div>
+        <div class="pill"><b id="movesValue">0</b><span id="movesKindLabel">ходы · случайный</span></div>
         <button class="pill time-pill" id="timePill" type="button" title="Поставить игру на паузу">
           <b id="timeValue">00:00</b><span>время</span>
         </button>
@@ -1977,6 +1985,32 @@
   </div>
 
 
+
+  <div class="modal" id="challengesModal">
+    <div class="modal-card challenges-card">
+      <button class="btn challenges-close" type="button" id="closeChallengesBtn" aria-label="Закрыть">×</button>
+      <span class="eyebrow">MIYEON SPIDER</span>
+      <h2>Испытания</h2>
+      <p>Одинаковые раскладки для всех игроков и отдельные таблицы результатов.</p>
+      <div class="challenges-grid">
+        <button class="challenge-choice" type="button" id="dailyChallengeChoice">
+          <i>☀</i>
+          <strong>Ежедневная раскладка</strong>
+          <span>Новая раскладка каждый день, календарь прохождений и кубок месяца.</span>
+        </button>
+        <button class="challenge-choice" type="button" id="weeklyChallengeChoice">
+          <i>♛</i>
+          <strong>Еженедельная раскладка</strong>
+          <span>Одна раскладка на неделю, общий рейтинг и награды за лучшие результаты.</span>
+        </button>
+        <button class="challenge-choice" type="button" id="oneAttemptChallengeChoice">
+          <i>◆</i>
+          <strong>Одна попытка</strong>
+          <span>Один запуск на 24 часа. Общий рейтинг для всех уровней сложности.</span>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="dailyCalendarModal">
     <div class="modal-card daily-calendar-card">
@@ -2273,6 +2307,7 @@
     stockCount: document.getElementById('stockCount'),
     completedZone: document.getElementById('completedZone'),
     moves: document.getElementById('movesValue'),
+    movesKindLabel: document.getElementById('movesKindLabel'),
     time: document.getElementById('timeValue'),
     sets: document.getElementById('setsValue'),
     undo: document.getElementById('undoBtn'),
@@ -2285,6 +2320,11 @@
     difficultyTitle: document.getElementById('difficultyTitle'),
     modeLabel: document.getElementById('modeLabel'),
     dailyGame: document.getElementById('dailyGameBtn'),
+    challengesModal: document.getElementById('challengesModal'),
+    closeChallenges: document.getElementById('closeChallengesBtn'),
+    dailyChallengeChoice: document.getElementById('dailyChallengeChoice'),
+    weeklyChallengeChoice: document.getElementById('weeklyChallengeChoice'),
+    oneAttemptChallengeChoice: document.getElementById('oneAttemptChallengeChoice'),
     dealCode: document.getElementById('dealCodeBtn'),
     autoComplete: document.getElementById('autoCompleteBtn'),
     codeModal: document.getElementById('dealCodeModal'),
@@ -3068,6 +3108,8 @@
     if (el.modeLabel) {
       const kindLabel =
         currentGameKind === 'daily' ? ' · Ежедневная' :
+        currentGameKind === 'weekly' ? ' · Еженедельная' :
+        currentGameKind === 'oneAttempt' ? ' · Одна попытка' :
         currentGameKind === 'code' ? ' · По коду' :
         '';
 
@@ -3109,7 +3151,7 @@
       : 'medium';
 
     const requestedKind = options.gameKind || pendingStartMode || 'random';
-    const requestedDailyDateKey = ['daily','weekly'].includes(requestedKind)
+    const requestedDailyDateKey = ['daily','weekly','oneAttempt'].includes(requestedKind)
       ? (options.dateKey || currentDailyDateKey || utcDateKey())
       : '';
 
@@ -3117,6 +3159,8 @@
       currentSeed = options.seed >>> 0;
     } else if (requestedKind === 'daily') {
       currentSeed = seedForDaily(requestedDailyDateKey, currentDifficulty);
+    } else if (requestedKind === 'oneAttempt') {
+      currentSeed = hashString32(`MIYEON-ONE-ATTEMPT-${requestedDailyDateKey}-${currentDifficulty}`);
     } else {
       currentSeed = makeRandomSeed();
     }
@@ -3124,10 +3168,11 @@
     currentGameKind =
       requestedKind === 'daily' ? 'daily' :
       requestedKind === 'weekly' ? 'weekly' :
+      requestedKind === 'oneAttempt' ? 'oneAttempt' :
       requestedKind === 'code' ? 'code' :
       'random';
 
-    currentDailyDateKey = ['daily','weekly'].includes(currentGameKind)
+    currentDailyDateKey = ['daily','weekly','oneAttempt'].includes(currentGameKind)
       ? requestedDailyDateKey
       : '';
 
@@ -4105,7 +4150,10 @@
       : 'Сначала открой все карты и закончи колоду';
     el.autoCompleteNotice.hidden = !available;
 
-    el.restartGame.disabled = !hasStartedGame;
+    el.restartGame.disabled = !hasStartedGame || currentGameKind === 'oneAttempt';
+    el.restartGame.title = currentGameKind === 'oneAttempt'
+      ? 'В испытании «Одна попытка» перезапуск недоступен'
+      : '';
     el.pauseMenu.disabled = !hasStartedGame || currentGameFinished;
   }
 
@@ -4128,6 +4176,16 @@
 
   function updateStats() {
     el.moves.textContent = moves;
+    if (el.movesKindLabel) {
+      const kind = currentGameKind === 'daily'
+        ? 'ежедневный'
+        : currentGameKind === 'weekly'
+          ? 'еженедельный'
+          : currentGameKind === 'oneAttempt'
+            ? 'одна попытка'
+          : 'случайный';
+      el.movesKindLabel.textContent = `ходы · ${kind}`;
+    }
     el.time.textContent = formatTime(seconds);
     if (el.sets) el.sets.textContent = `${completed} / 8`;
     updateActionButtons();
@@ -4151,6 +4209,7 @@
   function gameKindLabel(kind = currentGameKind) {
     if (kind === 'daily') return 'Ежедневная раскладка';
     if (kind === 'weekly') return 'Испытание недели';
+    if (kind === 'oneAttempt') return 'Одна попытка';
     if (kind === 'code') return 'Раскладка по коду';
     return 'Обычная партия';
   }
@@ -4186,7 +4245,7 @@
         : 'medium',
       seed:Number.isInteger(value.seed) ? value.seed >>> 0 : makeRandomSeed(),
       dealCode:String(value.dealCode || ''),
-      gameKind:['random','daily','weekly','code'].includes(value.gameKind)
+      gameKind:['random','daily','weekly','oneAttempt','code'].includes(value.gameKind)
         ? value.gameKind
         : 'random',
       dailyDateKey:String(value.dailyDateKey || ''),
@@ -4326,6 +4385,11 @@
       return;
     }
 
+    if (currentGameKind === 'oneAttempt') {
+      showToast('Для испытания «Одна попытка» отдельные сохранения недоступны');
+      return;
+    }
+
     if (gameSlots[index] && !window.confirm(
       `Перезаписать сохранение в слоте ${index + 1}?`
     )) {
@@ -4413,6 +4477,11 @@
   function restartCurrentGame() {
     if (!hasStartedGame) {
       showToast('Сначала начни игру');
+      return;
+    }
+
+    if (currentGameKind === 'oneAttempt') {
+      showToast('В этом испытании нельзя перезапустить раскладку');
       return;
     }
 
@@ -4611,7 +4680,7 @@
         ? state.seed >>> 0
         : makeRandomSeed();
 
-      currentGameKind = ['random', 'daily', 'code'].includes(state.gameKind)
+      currentGameKind = ['random', 'daily', 'weekly', 'oneAttempt', 'code'].includes(state.gameKind)
         ? state.gameKind
         : 'random';
 
@@ -4647,7 +4716,25 @@
     () => openDifficultySelector(false, 'random')
   );
 
-  el.dailyGame.addEventListener('click', openDailyCalendar);
+  const openChallenges = () => el.challengesModal.classList.add('show');
+  const closeChallenges = () => el.challengesModal.classList.remove('show');
+  el.dailyGame.addEventListener('click', openChallenges);
+  el.closeChallenges.addEventListener('click', closeChallenges);
+  el.challengesModal.addEventListener('click', event => {
+    if (event.target === el.challengesModal) closeChallenges();
+  });
+  el.dailyChallengeChoice.addEventListener('click', () => {
+    closeChallenges();
+    openDailyCalendar();
+  });
+  el.weeklyChallengeChoice.addEventListener('click', () => {
+    closeChallenges();
+    window.dispatchEvent(new CustomEvent('miyeon-spider-open-weekly'));
+  });
+  el.oneAttemptChallengeChoice.addEventListener('click', () => {
+    closeChallenges();
+    window.dispatchEvent(new CustomEvent('miyeon-spider-open-one-attempt'));
+  });
   el.moreMenuBtn.addEventListener('click', event => {
     event.stopPropagation();
     toggleMoreMenu();
@@ -4804,6 +4891,7 @@
     }
     if (event.key !== 'Escape') return;
     if (el.moreMenu.classList.contains('show')) closeMoreMenu();
+    else if (el.challengesModal.classList.contains('show')) closeChallenges();
     else if (el.settingsModal.classList.contains('show')) closeSettings();
     else if (el.statisticsModal.classList.contains('show')) closeStatistics();
     else if (el.pauseModal.classList.contains('show')) resumeGame();
@@ -4827,6 +4915,14 @@
       code:event.detail.code
     });
   });
+  window.addEventListener('miyeon-spider-start-one-attempt', event => {
+    startNewGame(event.detail.difficulty || 'medium', {
+      gameKind:'oneAttempt',
+      dateKey:event.detail.dateKey,
+      seed:event.detail.seed,
+      code:event.detail.code
+    });
+  });
 
   (async () => {
     await preloadAllCardImages();
@@ -4842,7 +4938,7 @@
   <button type="button" data-mobile-action="deal">▤<span>Раздать</span></button>
   <button type="button" data-mobile-action="progress">♡<span>Профиль</span></button>
 </nav>
-<script type="module" src="spider-cloud.js?v=8"></script>
-<script src="spider-progress.js?v=3"></script>
+<script type="module" src="spider-cloud.js?v=9"></script>
+<script src="spider-progress.js?v=5"></script>
 </body>
 </html>
