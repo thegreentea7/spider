@@ -1833,6 +1833,12 @@
       background:#fff;
       color:var(--ink);
     }
+    .medium-suit-selects{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    @media(max-width:620px){
+      .suit-setting-row{align-items:flex-start;flex-direction:column}
+      .medium-suit-selects{width:100%;justify-content:stretch}
+      .medium-suit-selects .suit-select{flex:1;min-width:130px}
+    }
     .settings-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}
 
     body.setting-large-cards{
@@ -2144,6 +2150,23 @@
           <span class="setting-copy"><strong>Крупные масти</strong><span>Увеличивает обозначения ранга и масти в углах.</span></span>
           <input id="settingLargeSuits" type="checkbox">
         </label>
+        <label class="setting-row suit-setting-row">
+          <span class="setting-copy"><strong>Масть лёгкого режима</strong><span>Одна выбранная масть. Применится со следующей игры.</span></span>
+          <select class="suit-select" id="settingEasySuit" aria-label="Масть лёгкого режима">
+            <option value="H">♥ Черви</option><option value="S">♠ Пики</option><option value="D">♦ Бубны</option><option value="C">♣ Крести</option>
+          </select>
+        </label>
+        <div class="setting-row suit-setting-row">
+          <span class="setting-copy"><strong>Масти среднего режима</strong><span>Выбери две разные масти. Применятся со следующей игры.</span></span>
+          <span class="medium-suit-selects">
+            <select class="suit-select" id="settingMediumSuitA" aria-label="Первая масть среднего режима">
+              <option value="H">♥ Черви</option><option value="S">♠ Пики</option><option value="D">♦ Бубны</option><option value="C">♣ Крести</option>
+            </select>
+            <select class="suit-select" id="settingMediumSuitB" aria-label="Вторая масть среднего режима">
+              <option value="H">♥ Черви</option><option value="S">♠ Пики</option><option value="D">♦ Бубны</option><option value="C">♣ Крести</option>
+            </select>
+          </span>
+        </div>
       </div>
       <div class="settings-footer">
         <button class="btn" id="resetSettingsBtn" type="button">Сбросить настройки</button>
@@ -2375,6 +2398,9 @@
     settingConfirmRestart: document.getElementById('settingConfirmRestart'),
     settingLargeCards: document.getElementById('settingLargeCards'),
     settingLargeSuits: document.getElementById('settingLargeSuits'),
+    settingEasySuit: document.getElementById('settingEasySuit'),
+    settingMediumSuitA: document.getElementById('settingMediumSuitA'),
+    settingMediumSuitB: document.getElementById('settingMediumSuitB'),
     statistics: document.getElementById('statisticsBtn'),
     statisticsModal: document.getElementById('statisticsModal'),
     closeStatistics: document.getElementById('closeStatisticsBtn'),
@@ -2410,6 +2436,8 @@
       confirmRestart:true,
       largeCards:false,
       largeSuits:false,
+      easySuit:'H',
+      mediumSuits:['H','S'],
       cardBack:'classic'
     };
   }
@@ -2441,6 +2469,15 @@
     el.settingConfirmRestart.checked = Boolean(gameSettings.confirmRestart);
     el.settingLargeCards.checked = Boolean(gameSettings.largeCards);
     el.settingLargeSuits.checked = Boolean(gameSettings.largeSuits);
+    el.settingEasySuit.value = ['H','S','D','C'].includes(gameSettings.easySuit) ? gameSettings.easySuit : 'H';
+    const mediumSuits = Array.isArray(gameSettings.mediumSuits)
+      ? [...new Set(gameSettings.mediumSuits.filter(suit => ['H','S','D','C'].includes(suit)))].slice(0,2)
+      : [];
+    while (mediumSuits.length < 2) mediumSuits.push(['H','S','D','C'].find(suit => !mediumSuits.includes(suit)));
+    gameSettings.easySuit = el.settingEasySuit.value;
+    gameSettings.mediumSuits = mediumSuits;
+    el.settingMediumSuitA.value = mediumSuits[0];
+    el.settingMediumSuitB.value = mediumSuits[1];
     if (shouldRender && hasStartedGame) render();
   }
 
@@ -2817,17 +2854,27 @@
     return null;
   }
 
+  function selectedSuitsForDifficulty(difficulty = currentDifficulty) {
+    if (difficulty === 'hard') return ['H','S','D','C'];
+    if (difficulty === 'easy') {
+      return [['H','S','D','C'].includes(gameSettings.easySuit) ? gameSettings.easySuit : 'H'];
+    }
+    const selected = Array.isArray(gameSettings.mediumSuits)
+      ? [...new Set(gameSettings.mediumSuits.filter(suit => ['H','S','D','C'].includes(suit)))].slice(0,2)
+      : [];
+    while (selected.length < 2) selected.push(['H','S','D','C'].find(suit => !selected.includes(suit)));
+    return selected;
+  }
+
   function buildDeck(difficulty = currentDifficulty, seed = currentSeed) {
     const deck = [];
     let id = 0;
-    let suits = ['H', 'S'];
+    let suits = selectedSuitsForDifficulty(difficulty);
     let repeats = 4;
 
     if (difficulty === 'easy') {
-      suits = ['H'];
       repeats = 8;
     } else if (difficulty === 'hard') {
-      suits = ['H', 'S', 'D', 'C'];
       repeats = 2;
     }
 
@@ -3776,14 +3823,12 @@
     document.body.appendChild(layer);
 
     const victoryDeck = [];
-    let victorySuits = ['H', 'S'];
+    let victorySuits = selectedSuitsForDifficulty(currentDifficulty);
     let victoryRepeats = 4;
 
     if (currentDifficulty === 'easy') {
-      victorySuits = ['H'];
       victoryRepeats = 8;
     } else if (currentDifficulty === 'hard') {
-      victorySuits = ['H', 'S', 'D', 'C'];
       victoryRepeats = 2;
     }
 
@@ -4554,6 +4599,16 @@
     applyGameSettings();
   }
 
+  function updateMediumSuit(index, value) {
+    const pair = selectedSuitsForDifficulty('medium');
+    if (pair[1 - index] === value) pair[1 - index] = pair[index];
+    pair[index] = value;
+    gameSettings.mediumSuits = pair;
+    saveGameSettings();
+    applyGameSettings(false);
+    showToast('Масти применятся со следующей игры');
+  }
+
   function openStatistics() {
     closeMoreMenu();
     renderStatistics();
@@ -4760,6 +4815,14 @@
   el.settingConfirmRestart.addEventListener('change', () => updateSetting('confirmRestart', el.settingConfirmRestart.checked));
   el.settingLargeCards.addEventListener('change', () => updateSetting('largeCards', el.settingLargeCards.checked));
   el.settingLargeSuits.addEventListener('change', () => updateSetting('largeSuits', el.settingLargeSuits.checked));
+  el.settingEasySuit.addEventListener('change', () => {
+    gameSettings.easySuit = el.settingEasySuit.value;
+    saveGameSettings();
+    applyGameSettings(false);
+    showToast('Масть применится со следующей игры');
+  });
+  el.settingMediumSuitA.addEventListener('change', () => updateMediumSuit(0, el.settingMediumSuitA.value));
+  el.settingMediumSuitB.addEventListener('change', () => updateMediumSuit(1, el.settingMediumSuitB.value));
   window.addEventListener('miyeon-spider-card-back-selected', event => {
     const cardBack = event.detail?.cardBack;
     if (['classic','light','dark','stars','crown','neverland'].includes(cardBack)) updateSetting('cardBack', cardBack);
