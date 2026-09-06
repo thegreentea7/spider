@@ -450,7 +450,7 @@ async function loadDailyBoard(dateKey = context.dailyDateKey || todayKey()) {
     table.innerHTML = `<div class="daily-board-head"><span>Место</span><span>Игрок</span><span>Ходы</span></div>${entries.map((entry, index) => `
       <div class="daily-board-row${entry.userId === currentUser?.uid ? " own" : ""}">
         <span class="board-rank">${index + 1}</span>
-        <span class="board-player">${escapeHtml(entry.playerName || "Игрок")}${entry.userId === currentUser?.uid ? "<small>ВЫ</small>" : ""}</span>
+        <span class="board-player frame-${escapeHtml(entry.frameId || "classic")}">${escapeHtml(entry.playerName || "Игрок")}${entry.userId === currentUser?.uid ? "<small>ВЫ</small>" : ""}</span>
         <span class="board-moves">${Number(entry.moves) || 0}</span>
       </div>`).join("")}`;
   } catch {
